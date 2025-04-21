@@ -1,0 +1,14 @@
+build-*/
+*.pro.user
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.app
+*.qrc.depends
+Makefile*
+moc_*
+ui_*
+qrc_*
