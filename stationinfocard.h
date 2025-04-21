@@ -12,37 +12,57 @@
 #include <QPushButton>
 #include <QTableWidget>
 #include <QHeaderView>
+#include <QComboBox>
+#include <QChart>
+#include <QChartView>
+#include <QLineSeries>
+#include <QDateTimeAxis>
+#include <QValueAxis>
 
 class StationInfoCard : public QFrame {
     Q_OBJECT
 
 public:
-    StationInfoCard(QWidget *parent = nullptr);
+    explicit StationInfoCard(QWidget *parent = nullptr);
     void showStationData(int stationId, const QString &stationName, const QString &communeName, const QString &provinceName);
-    void animateIn();
-    void animateOut();
 
 signals:
-    void cardClosed(); // Sygnał emitowany po zamknięciu karty
+    void cardClosed();
 
 private slots:
     void onCloseButtonClicked();
     void onSensorsReplyFinished(QNetworkReply *reply);
-    void onDataReplyFinished(QNetworkReply *reply, int column);
+    void onDataReplyFinished(QNetworkReply *reply, int column, const QString paramCode);
+    void onSensorSelectionChanged(const QString paramCode);
+    void onTimeRangeChanged(const QString timeRange);
+    void onSaveButtonClicked();
 
 private:
-    void adjustTableWidth(); // Nowa metoda do dopasowania szerokości tabeli
-
     QNetworkAccessManager *networkManager;
+    QTableWidget *dataTable;
     QLabel *titleLabel;
     QLabel *stationNameLabel;
     QLabel *locationLabel;
-    QTableWidget *dataTable;
     QPushButton *closeButton;
+    QPushButton *saveButton;
+    QComboBox *sensorComboBox;
+    QComboBox *timeRangeComboBox;
+    QChart *chart;
+    QChartView *chartView;
     QVBoxLayout *layout;
-    int pendingRequests;
     QStringList sensorData;
+    QMap<QString, QJsonArray> sensorValues;
     QMap<QString, QString> paramNames;
+    int pendingRequests;
+    QString currentTimeRange;
+
+    void setupChart();
+    void animateIn();
+    void animateOut();
+    void adjustTableWidth();
+    void updateChart(const QString paramCode);
+    void updateComboBoxPositions();
+    void saveDataToJson(const QString &fileName);
 };
 
 #endif // STATIONINFOCARD_H
