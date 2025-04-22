@@ -39,6 +39,8 @@ private slots:
     void onSaveButtonClicked();
 
 private:
+    friend class TestStationInfoCard;
+
     QNetworkAccessManager *networkManager;
     QTableWidget *dataTable;
     QLabel *titleLabel;

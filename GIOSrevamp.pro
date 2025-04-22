@@ -1,8 +1,8 @@
-QT       += core gui network charts widgets
+QT       += core gui network charts widgets testlib
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-CONFIG += debug c++17
+CONFIG += debug c++17 testcase
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -11,7 +11,7 @@ CONFIG += debug c++17
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
-    stationinfocard.cpp
+    stationinfocard.cpp \
 
 HEADERS += \
     clickableellipseitem.h \

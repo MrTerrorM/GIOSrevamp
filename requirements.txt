@@ -1,0 +1,20 @@
+# Wymagania dla projektu GIOSrevamp
+
+# 1. Qt Framework
+Qt>=5.15  # Wymagane do budowania aplikacji (zalecane Qt 6.9.0)
+
+# 2. Kompilator C++
+# - g++ (dla Linux/macOS)
+# - MSVC (dla Windows)
+# Zainstaluj odpowiedni kompilator w zależności od systemu operacyjnego
+
+# 3. Qt Modules
+# Wymagane moduły Qt (zdefiniowane w pliku .pro):
+# - core
+# - gui
+# - network
+# - charts
+# - widgets
+
+# 4. Dostęp do internetu
+# Aplikacja wymaga połączenia z internetem do pobierania danych z API GIOŚ.

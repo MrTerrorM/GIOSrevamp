@@ -442,8 +442,6 @@ void StationInfoCard::onSensorsReplyFinished(QNetworkReply *reply) {
 }
 
 void StationInfoCard::onDataReplyFinished(QNetworkReply *reply, int column, const QString paramCode) {
-    bool allDataMissing = true;
-
     if (reply->error() == QNetworkReply::NoError) {
         QByteArray rawData = reply->readAll();
         qDebug() << "Odpowiedź API GIOŚ (dane sensora, paramCode:" << paramCode << "):" << rawData;
@@ -459,7 +457,6 @@ void StationInfoCard::onDataReplyFinished(QNetworkReply *reply, int column, cons
                 if (latestValue.contains("value") && !latestValue["value"].isNull()) {
                     double value = latestValue["value"].toDouble();
                     valueText = QString::number(value, 'f', 1);
-                    allDataMissing = false;
                 }
             }
 
