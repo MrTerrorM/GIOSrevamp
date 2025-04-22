@@ -14,6 +14,7 @@ SOURCES += \
     stationinfocard.cpp
 
 HEADERS += \
+    clickableellipseitem.h \
     custombutton.h \
     mainwindow.h \
     stationinfocard.h

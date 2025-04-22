@@ -25,6 +25,7 @@ class StationInfoCard : public QFrame {
 public:
     explicit StationInfoCard(QWidget *parent = nullptr);
     void showStationData(int stationId, const QString &stationName, const QString &communeName, const QString &provinceName);
+    void showDataFromFile(const QString &stationName, const QString &location, const QJsonArray &sensors);
 
 signals:
     void cardClosed();
@@ -43,6 +44,10 @@ private:
     QLabel *titleLabel;
     QLabel *stationNameLabel;
     QLabel *locationLabel;
+    QLabel *minValueLabel;      // Nowa etykieta dla minimalnej wartości
+    QLabel *maxValueLabel;      // Nowa etykieta dla maksymalnej wartości
+    QLabel *averageValueLabel;  // Nowa etykieta dla średniej wartości
+    QLabel *trendLabel;         // Nowa etykieta dla trendu
     QPushButton *closeButton;
     QPushButton *saveButton;
     QComboBox *sensorComboBox;

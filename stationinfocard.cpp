@@ -11,6 +11,8 @@
 #include <QJsonObject>
 #include <QFile>
 #include <QDateTime>
+#include <QCoreApplication>
+#include <QDir>
 
 StationInfoCard::StationInfoCard(QWidget *parent)
     : QFrame(parent), networkManager(new QNetworkAccessManager(this)), pendingRequests(0), currentTimeRange("Dzień") {
@@ -48,6 +50,23 @@ StationInfoCard::StationInfoCard(QWidget *parent)
     locationLabel = new QLabel(this);
     locationLabel->setStyleSheet("font-size: 16px; color: black; margin-right: 10px;");
     locationLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    // Nowe etykiety dla wartości minimalnej, maksymalnej, średniej i trendu
+    minValueLabel = new QLabel("Najmniejsza wartość: Brak danych", this);
+    minValueLabel->setStyleSheet("font-size: 14px; color: black; margin: 10px;");
+    minValueLabel->setAlignment(Qt::AlignCenter);
+
+    maxValueLabel = new QLabel("Największa wartość: Brak danych", this);
+    maxValueLabel->setStyleSheet("font-size: 14px; color: black; margin: 10px;");
+    maxValueLabel->setAlignment(Qt::AlignCenter);
+
+    averageValueLabel = new QLabel("Średnia wartość: Brak danych", this);
+    averageValueLabel->setStyleSheet("font-size: 16px; font-weight: bold; color: black; margin: 10px;");
+    averageValueLabel->setAlignment(Qt::AlignCenter);
+
+    trendLabel = new QLabel("Trend: Brak danych", this);
+    trendLabel->setStyleSheet("font-size: 14px; color: black; margin: 10px;");
+    trendLabel->setAlignment(Qt::AlignCenter);
 
     // Utworzenie tabeli dla danych sensorów
     dataTable = new QTableWidget(this);
@@ -147,6 +166,11 @@ StationInfoCard::StationInfoCard(QWidget *parent)
 
     // Dodanie chartView do głównego layoutu
     layout->addWidget(chartView);
+    // Dodanie nowych etykiet pod wykresem
+    layout->addWidget(minValueLabel);
+    layout->addWidget(maxValueLabel);
+    layout->addWidget(averageValueLabel);
+    layout->addWidget(trendLabel);
     layout->addStretch();
     setLayout(layout);
 
@@ -200,6 +224,11 @@ void StationInfoCard::showStationData(int stationId, const QString &stationName,
     pendingRequests = 0;
     dataTable->setColumnCount(0);
     chart->removeAllSeries();
+    // Wyczyść nowe etykiety
+    minValueLabel->setText("Najmniejsza wartość: Brak danych");
+    maxValueLabel->setText("Największa wartość: Brak danych");
+    averageValueLabel->setText("Średnia wartość: Brak danych");
+    trendLabel->setText("Trend: Brak danych");
     // Ustaw domyślny zakres osi X
     if (!chart->axes(Qt::Horizontal).isEmpty()) {
         QDateTimeAxis *axisX = qobject_cast<QDateTimeAxis*>(chart->axes(Qt::Horizontal).first());
@@ -217,6 +246,103 @@ void StationInfoCard::showStationData(int stationId, const QString &stationName,
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         onSensorsReplyFinished(reply);
     });
+
+    // Dopasuj rozmiar do rodzica i pokaż kartę
+    if (parentWidget()) {
+        resize(parentWidget()->size());
+    }
+    setVisible(true);
+    raise();
+    move(-width(), 0);
+    animateIn();
+}
+
+void StationInfoCard::showDataFromFile(const QString &stationName, const QString &location, const QJsonArray &sensors) {
+    qDebug() << "Pokazywanie danych z pliku dla stacji:" << stationName << "Lokalizacja:" << location;
+
+    // Ustaw nazwę stacji i lokalizację
+    stationNameLabel->setText(stationName);
+    locationLabel->setText(location);
+
+    // Wyczyść poprzednie dane
+    sensorData.clear();
+    sensorValues.clear();
+    sensorComboBox->clear();
+    dataTable->setColumnCount(0);
+    chart->removeAllSeries();
+    // Wyczyść nowe etykiety
+    minValueLabel->setText("Najmniejsza wartość: Brak danych");
+    maxValueLabel->setText("Największa wartość: Brak danych");
+    averageValueLabel->setText("Średnia wartość: Brak danych");
+    trendLabel->setText("Trend: Brak danych");
+
+    // Ustaw domyślny zakres osi X
+    if (!chart->axes(Qt::Horizontal).isEmpty()) {
+        QDateTimeAxis *axisX = qobject_cast<QDateTimeAxis*>(chart->axes(Qt::Horizontal).first());
+        QDateTime now = QDateTime::currentDateTime();
+        axisX->setRange(now.addDays(-1), now);
+    }
+
+    // Przetwarzaj sensory z pliku
+    if (sensors.isEmpty()) {
+        sensorData.append("Brak danych sensorów w pliku.");
+        dataTable->setRowCount(1);
+        dataTable->setColumnCount(1);
+        QTableWidgetItem *item = new QTableWidgetItem("Brak Danych");
+        item->setForeground(Qt::white);
+        dataTable->setItem(0, 0, item);
+        dataTable->resizeColumnsToContents();
+        adjustTableWidth();
+    } else {
+        dataTable->setColumnCount(sensors.size());
+        int column = 0;
+
+        for (const QJsonValue &sensorValue : sensors) {
+            QJsonObject sensor = sensorValue.toObject();
+            QString paramCode = sensor["paramCode"].toString();
+            QString latestValue = sensor["latestValue"].toString();
+            QJsonArray historicalData = sensor["historicalData"].toArray();
+
+            // Dodaj kod parametru do pierwszego wiersza
+            QTableWidgetItem *paramItem = new QTableWidgetItem(paramCode);
+            paramItem->setTextAlignment(Qt::AlignCenter);
+            paramItem->setForeground(Qt::white);
+            if (paramNames.contains(paramCode)) {
+                paramItem->setToolTip(paramNames[paramCode]);
+            } else {
+                paramItem->setToolTip(paramCode);
+            }
+            dataTable->setItem(0, column, paramItem);
+
+            // Dodaj wartość do drugiego wiersza
+            QTableWidgetItem *valueItem = new QTableWidgetItem(latestValue);
+            valueItem->setTextAlignment(Qt::AlignCenter);
+            valueItem->setForeground(Qt::white);
+            dataTable->setItem(1, column, valueItem);
+
+            // Dodaj paramCode do listy rozwijanej
+            sensorComboBox->addItem(paramCode);
+
+            // Zapisz dane historyczne
+            sensorValues[paramCode] = historicalData;
+            sensorData.append(latestValue);
+
+            column++;
+        }
+
+        // Ustaw pierwszy sensor jako domyślny
+        if (sensorComboBox->count() > 0) {
+            sensorComboBox->setCurrentIndex(0);
+        }
+
+        dataTable->resizeColumnsToContents();
+        adjustTableWidth();
+
+        // Zaktualizuj wykres dla pierwszego sensora
+        if (sensorComboBox->count() > 0) {
+            updateChart(sensorComboBox->currentText());
+        }
+    }
 
     // Dopasuj rozmiar do rodzica i pokaż kartę
     if (parentWidget()) {
@@ -391,8 +517,8 @@ void StationInfoCard::onSensorSelectionChanged(const QString paramCode) {
 void StationInfoCard::onTimeRangeChanged(const QString timeRange) {
     qDebug() << "Wybrano zakres czasu:" << timeRange;
     currentTimeRange = timeRange;
-    if (sensorComboBox->count() > 0) {
-        updateChart(sensorComboBox->currentData().toString());
+    if (sensorComboBox->count() > 0 && !sensorComboBox->currentText().isEmpty()) {
+        updateChart(sensorComboBox->currentText());
     }
 }
 
@@ -412,6 +538,12 @@ void StationInfoCard::updateChart(const QString paramCode) {
         delete axis;
     }
 
+    // Wyczyść etykiety
+    minValueLabel->setText("Najmniejsza wartość: Brak danych");
+    maxValueLabel->setText("Największa wartość: Brak danych");
+    averageValueLabel->setText("Średnia wartość: Brak danych");
+    trendLabel->setText("Trend: Brak danych");
+
     if (!sensorValues.contains(paramCode)) {
         qDebug() << "Brak danych dla paramCode:" << paramCode;
         chart->setTitle(paramNames.value(paramCode, paramCode));
@@ -427,6 +559,14 @@ void StationInfoCard::updateChart(const QString paramCode) {
     bool hasData = false;
     QDateTime minDateTime = QDateTime::currentDateTime();
     QDateTime maxDateTime = minDateTime;
+
+    // Zmienne do obliczania min, max, średniej i trendu
+    double minValue = std::numeric_limits<double>::max();
+    double maxValue = std::numeric_limits<double>::lowest();
+    QDateTime minValueDateTime, maxValueDateTime;
+    double sumValues = 0.0;
+    int validValueCount = 0;
+    QVector<QPointF> regressionPoints;
 
     // Określ maksymalną liczbę punktów w zależności od zakresu czasu
     int maxPoints = 24;
@@ -484,6 +624,21 @@ void StationInfoCard::updateChart(const QString paramCode) {
         if (!valueObj["value"].isNull()) {
             lastValue = value;
             hasData = true;
+
+            // Oblicz min, max, sumę do średniej
+            if (value < minValue) {
+                minValue = value;
+                minValueDateTime = dateTime;
+            }
+            if (value > maxValue) {
+                maxValue = value;
+                maxValueDateTime = dateTime;
+            }
+            sumValues += value;
+            validValueCount++;
+
+            // Dodaj punkt do regresji (czas w milisekundach jako x, wartość jako y)
+            regressionPoints.append(QPointF(dateTime.toMSecsSinceEpoch(), value));
         } else if (lastValue < 0) {
             lastValue = 0;
         }
@@ -498,6 +653,48 @@ void StationInfoCard::updateChart(const QString paramCode) {
 
     // Ustaw tytuł wykresu
     chart->setTitle(paramNames.value(paramCode, paramCode));
+
+    // Aktualizuj etykiety, jeśli są dane
+    if (hasData && validValueCount > 0) {
+        // Minimalna wartość z pogrubioną wartością
+        minValueLabel->setText(QString("Najmniejsza wartość: <b>%1</b> w dniu %2")
+                                   .arg(QString::number(minValue, 'f', 1))
+                                   .arg(minValueDateTime.toString("dd.MM.yyyy HH:mm")));
+
+        // Maksymalna wartość z pogrubioną wartością
+        maxValueLabel->setText(QString("Największa wartość: <b>%1</b> w dniu %2")
+                                   .arg(QString::number(maxValue, 'f', 1))
+                                   .arg(maxValueDateTime.toString("dd.MM.yyyy HH:mm")));
+
+        // Średnia wartość
+        double averageValue = sumValues / validValueCount;
+        averageValueLabel->setText(QString("Średnia wartość: %1")
+                                       .arg(QString::number(averageValue, 'f', 1)));
+
+        // Oblicz trend (regresja liniowa)
+        double slope = 0.0;
+        if (regressionPoints.size() >= 2) {
+            double sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumXX = 0.0;
+            int n = regressionPoints.size();
+            for (const QPointF &point : regressionPoints) {
+                sumX += point.x();
+                sumY += point.y();
+                sumXY += point.x() * point.y();
+                sumXX += point.x() * point.x();
+            }
+            slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            qDebug() << "Nachylenie regresji (slope):" << slope;
+        }
+
+        // Ustaw trend
+        if (slope > 0) {
+            trendLabel->setText("Trend: Tendencja Wzrostu");
+        } else if (slope < 0) {
+            trendLabel->setText("Trend: Tendencja Spadku");
+        } else {
+            trendLabel->setText("Trend: Stabilny");
+        }
+    }
 
     if (hasData && !series->points().isEmpty()) {
         chart->addSeries(series);
@@ -627,24 +824,121 @@ void StationInfoCard::updateComboBoxPositions() {
              << ", chartView width=" << chartView->width();
 }
 
+#include "stationinfocard.h"
+#include <QPropertyAnimation>
+#include <QDebug>
+#include <QPalette>
+#include <QHBoxLayout>
+#include <QSpacerItem>
+#include <QFontMetrics>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QFile>
+#include <QDateTime>
+#include <QCoreApplication>
+#include <QDir>
+
+// Funkcja onSaveButtonClicked
 void StationInfoCard::onSaveButtonClicked() {
     qDebug() << "Przycisk Zapisz kliknięty";
-    // Otwórz okno dialogowe do wyboru pliku
-    QString fileName = QFileDialog::getSaveFileName(this, tr("Zapisz dane stacji"), "", tr("Pliki JSON (*.json)"));
-    if (!fileName.isEmpty()) {
-        saveDataToJson(fileName);
+
+    // Przygotuj dane do zapisu
+    QJsonObject stationObject;
+    stationObject["stationName"] = stationNameLabel->text();
+    stationObject["location"] = locationLabel->text();
+
+    QJsonArray sensorsArray;
+    for (int col = 0; col < dataTable->columnCount(); ++col) {
+        QTableWidgetItem *paramItem = dataTable->item(0, col);
+        QTableWidgetItem *valueItem = dataTable->item(1, col);
+        if (!paramItem || !valueItem) continue;
+
+        QString paramCode = paramItem->text();
+        QString latestValue = valueItem->text();
+
+        QJsonObject sensorObject;
+        sensorObject["paramCode"] = paramCode;
+        sensorObject["latestValue"] = latestValue;
+
+        // Pobierz istniejące dane historyczne
+        QJsonArray historicalData;
+        if (sensorValues.contains(paramCode)) {
+            historicalData = sensorValues[paramCode];
+        }
+
+        // Dodaj nowy punkt danych na początek
+        QJsonObject newDataPoint;
+        newDataPoint["date"] = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+        newDataPoint["value"] = latestValue.toDouble();
+        historicalData.prepend(newDataPoint);
+
+        sensorObject["historicalData"] = historicalData;
+        sensorsArray.append(sensorObject);
+
+        // Zaktualizuj sensorValues
+        sensorValues[paramCode] = historicalData;
+    }
+
+    stationObject["sensors"] = sensorsArray;
+
+    // Utwórz tablicę stations i dodaj stationObject
+    QJsonArray stationsArray;
+    stationsArray.append(stationObject);
+
+    // Utwórz główny obiekt JSON z kluczem "stations"
+    QJsonObject mainObject;
+    mainObject["stations"] = stationsArray;
+
+    // Przygotuj domyślną nazwę pliku na podstawie nazwy stacji
+    QString stationName = stationNameLabel->text();
+    // Usuń nadmiarowe spacje
+    stationName = stationName.simplified();
+    // Usuń znaki specjalne, w tym przecinki i kropki
+    stationName.remove(QRegularExpression("[<>:\"/\\\\|?*,.]"));
+    QString defaultFileName = stationName + ".json";
+
+    // Wybierz miejsce zapisu z domyślną nazwą pliku
+    QString filePath = QFileDialog::getSaveFileName(this, "Zapisz dane stacji", defaultFileName, "Pliki JSON (*.json)");
+    if (filePath.isEmpty()) {
+        qDebug() << "Zapis anulowany przez użytkownika";
+        return;
+    }
+
+    // Upewnij się, że plik ma rozszerzenie .json
+    if (!filePath.endsWith(".json", Qt::CaseInsensitive)) {
+        filePath += ".json";
+    }
+
+    // Zapisz dane do pliku
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(this, "Błąd zapisu", "Nie można otworzyć pliku do zapisu.");
+        qDebug() << "Błąd: Nie można otworzyć pliku do zapisu:" << filePath;
+        return;
+    }
+
+    QJsonDocument doc(mainObject);
+    file.write(doc.toJson(QJsonDocument::Indented));
+    file.close();
+    qDebug() << "Dane zapisane do pliku:" << filePath;
+
+    // Zaktualizuj wykres po zapisaniu nowych danych
+    if (sensorComboBox->count() > 0 && !sensorComboBox->currentText().isEmpty()) {
+        updateChart(sensorComboBox->currentText());
     }
 }
 
 void StationInfoCard::saveDataToJson(const QString &fileName) {
-    QJsonObject rootObj;
+    // Przygotowanie danych stacji
+    QString stationName = stationNameLabel->text();
+    QString location = locationLabel->text();
 
-    // Metadane
-    rootObj["timestamp"] = QDateTime::currentDateTime().toString(Qt::ISODate);
-    rootObj["stationName"] = stationNameLabel->text();
-    rootObj["location"] = locationLabel->text();
-    rootObj["selectedParameter"] = sensorComboBox->currentData().toString();
-    rootObj["timeRange"] = currentTimeRange;
+    // Tworzenie obiektu stacji
+    QJsonObject stationObj;
+    stationObj["stationName"] = stationName;
+    stationObj["location"] = location;
 
     // Dane sensorów
     QJsonArray sensorsArray;
@@ -656,25 +950,122 @@ void StationInfoCard::saveDataToJson(const QString &fileName) {
         sensorObj["latestValue"] = dataTable->item(1, col)->text();
 
         // Dane historyczne
+        QJsonArray historicalData;
         if (sensorValues.contains(paramCode)) {
-            QJsonArray valuesArray = sensorValues[paramCode];
-            sensorObj["historicalData"] = valuesArray;
-        } else {
-            sensorObj["historicalData"] = QJsonArray();
+            historicalData = sensorValues[paramCode];
         }
+        sensorObj["historicalData"] = historicalData;
+
         sensorsArray.append(sensorObj);
     }
-    rootObj["sensors"] = sensorsArray;
+    stationObj["sensors"] = sensorsArray;
 
-    // Tworzenie dokumentu JSON
-    QJsonDocument doc(rootObj);
+    // Odczyt istniejącego pliku, jeśli istnieje
+    QJsonObject rootObj;
+    QJsonArray stationsArray;
     QFile file(fileName);
+    if (file.exists()) {
+        if (!file.open(QIODevice::ReadOnly)) {
+            qDebug() << "Nie można otworzyć pliku do odczytu:" << fileName;
+            QMessageBox::warning(this, tr("Błąd"), tr("Nie można otworzyć pliku do odczytu: %1").arg(file.errorString()));
+            return;
+        }
+
+        QByteArray existingData = file.readAll();
+        file.close();
+
+        QJsonDocument existingDoc = QJsonDocument::fromJson(existingData);
+        if (!existingDoc.isNull() && existingDoc.isObject()) {
+            rootObj = existingDoc.object();
+            if (rootObj.contains("stations") && rootObj["stations"].isArray()) {
+                stationsArray = rootObj["stations"].toArray();
+            }
+        } else {
+            qDebug() << "Nieprawidłowy format istniejącego pliku JSON. Tworzenie nowego.";
+        }
+    }
+
+    // Szukaj istniejącej stacji
+    int stationIndex = -1;
+    for (int i = 0; i < stationsArray.size(); ++i) {
+        QJsonObject existingStation = stationsArray[i].toObject();
+        if (existingStation["stationName"].toString() == stationName) {
+            stationIndex = i;
+            break;
+        }
+    }
+
+    // Aktualizacja lub dodanie stacji
+    if (stationIndex >= 0) {
+        // Stacja istnieje - aktualizuj sensory
+        QJsonObject existingStation = stationsArray[stationIndex].toObject();
+        QJsonArray existingSensors = existingStation["sensors"].toArray();
+
+        // Przetwarzaj każdy nowy sensor
+        QJsonArray updatedSensors;
+        for (const QJsonValue &newSensorValue : sensorsArray) {
+            QJsonObject newSensor = newSensorValue.toObject();
+            QString paramCode = newSensor["paramCode"].toString();
+            QJsonObject updatedSensor = newSensor;
+
+            // Szukaj istniejącego sensora
+            bool sensorExists = false;
+            for (const QJsonValue &existingSensorValue : existingSensors) {
+                QJsonObject existingSensor = existingSensorValue.toObject();
+                if (existingSensor["paramCode"].toString() == paramCode) {
+                    sensorExists = true;
+                    // Aktualizuj latestValue
+                    updatedSensor["latestValue"] = newSensor["latestValue"];
+
+                    // Scal dane historyczne, unikając duplikacji
+                    QJsonArray existingHistorical = existingSensor["historicalData"].toArray();
+                    QJsonArray newHistorical = newSensor["historicalData"].toArray();
+                    QSet<QString> existingDates;
+                    for (const QJsonValue &val : existingHistorical) {
+                        existingDates.insert(val.toObject()["date"].toString());
+                    }
+
+                    // Dodaj tylko nowe unikalne wpisy historyczne
+                    QJsonArray mergedHistorical = existingHistorical;
+                    for (const QJsonValue &newVal : newHistorical) {
+                        QString date = newVal.toObject()["date"].toString();
+                        if (!existingDates.contains(date)) {
+                            mergedHistorical.append(newVal);
+                        }
+                    }
+                    updatedSensor["historicalData"] = mergedHistorical;
+                    break;
+                }
+            }
+
+            if (!sensorExists) {
+                // Nowy sensor - dodaj w całości
+                updatedSensor = newSensor;
+            }
+
+            updatedSensors.append(updatedSensor);
+        }
+
+        // Zaktualizuj listę sensorów dla stacji
+        existingStation["sensors"] = updatedSensors;
+        existingStation["location"] = location; // Zaktualizuj lokalizację
+        stationsArray[stationIndex] = existingStation;
+    } else {
+        // Nowa stacja - dodaj do tablicy
+        stationsArray.append(stationObj);
+    }
+
+    // Zaktualizuj główny obiekt JSON
+    rootObj["stations"] = stationsArray;
+
+    // Zapis do pliku
     if (!file.open(QIODevice::WriteOnly)) {
         qDebug() << "Nie można otworzyć pliku do zapisu:" << fileName;
         QMessageBox::warning(this, tr("Błąd"), tr("Nie można zapisać pliku: %1").arg(file.errorString()));
         return;
     }
 
+    QJsonDocument doc(rootObj);
     file.write(doc.toJson(QJsonDocument::Indented));
     file.close();
     qDebug() << "Dane zapisane do pliku:" << fileName;

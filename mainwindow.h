@@ -3,15 +3,17 @@
 
 #include <QMainWindow>
 #include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QListWidget>
 #include <QGraphicsView>
 #include <QGraphicsScene>
-#include <QJsonArray>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QLabel>
-#include "stationinfocard.h"
+#include <QComboBox>
 #include "custombutton.h"
+#include "stationinfocard.h"
+#include "clickableellipseitem.h"
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -27,6 +29,9 @@ private slots:
     void onSearchButtonClicked();
     void onGeocodingReplyFinished(QNetworkReply *reply);
     void onStationClicked(int stationId, const QString &stationName, const QString &communeName, const QString &provinceName);
+    void onStationActivated(QListWidgetItem *item);
+    void onLoadFileButtonClicked();
+    void onEllipseClicked(int stationId);
 
 private:
     void geocodeLocation(const QString &location);
@@ -41,12 +46,14 @@ private:
     QLineEdit *searchEdit;
     QLineEdit *radiusEdit;
     QPushButton *searchButton;
+    QComboBox *sortComboBox;
+    QPushButton *loadFileButton;
     StationInfoCard *infoCard;
     QJsonArray allStations;
     int currentMode;
     bool geocodingDone;
-    double userLat;
-    double userLon;
+    QString sortMode;
+    double userLat, userLon;
 };
 
 #endif // MAINWINDOW_H

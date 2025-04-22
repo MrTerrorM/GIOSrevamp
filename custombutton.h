@@ -2,7 +2,8 @@
 #define CUSTOMBUTTON_H
 
 #include <QPushButton>
-#include <QEnterEvent> // Dodajemy nagłówek dla QEnterEvent
+#include <QEnterEvent>
+#include <QFocusEvent>
 
 class CustomButton : public QPushButton {
     Q_OBJECT
@@ -14,7 +15,7 @@ public:
     }
 
 protected:
-    void enterEvent(QEnterEvent *event) override { // Zmieniamy QEvent na QEnterEvent
+    void enterEvent(QEnterEvent *event) override {
         // Dodajemy strzałki przy najechaniu
         setText(">" + originalText + "<");
         QPushButton::enterEvent(event);
@@ -24,6 +25,18 @@ protected:
         // Przywracamy oryginalny tekst przy opuszczeniu
         setText(originalText);
         QPushButton::leaveEvent(event);
+    }
+
+    void focusInEvent(QFocusEvent *event) override {
+        // Dodajemy strzałki przy fokusie
+        setText(">" + originalText + "<");
+        QPushButton::focusInEvent(event);
+    }
+
+    void focusOutEvent(QFocusEvent *event) override {
+        // Przywracamy oryginalny tekst przy utracie fokusu
+        setText(originalText);
+        QPushButton::focusOutEvent(event);
     }
 
 public:

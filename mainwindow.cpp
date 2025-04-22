@@ -11,9 +11,13 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsEllipseItem>
 #include <QDebug>
+#include <QFileDialog>
+#include <QFile>
+#include <QJsonDocument>
+#include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), networkManager(new QNetworkAccessManager(this)), currentMode(0), geocodingDone(false) {
+    : QMainWindow(parent), networkManager(new QNetworkAccessManager(this)), currentMode(0), geocodingDone(false), sortMode("none") {
 
     // Ustawienie ikony okna
     setWindowIcon(QIcon(":/icons/hatsune.png"));
@@ -21,7 +25,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Tworzenie widżetu listy
     stationListWidget = new QListWidget(this);
     connect(stationListWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
-        if (currentMode == 0) { // Tylko w trybie "Wybierz Stację"
+        if (currentMode == 0 || currentMode == 1) { // Obsługa w trybie "Wybierz Stację" i "Podaj Lokalizację"
             QString text = item->text();
             qDebug() << "Kliknięto stację:" << text;
             int stationId = text.split(" - ").first().remove("ID: ").toInt();
@@ -45,6 +49,7 @@ MainWindow::MainWindow(QWidget *parent)
             onStationClicked(stationId, stationName, communeName, provinceName);
         }
     });
+    connect(stationListWidget, &QListWidget::itemActivated, this, &MainWindow::onStationActivated);
 
     // Tworzenie widżetu mapy i sceny
     mapView = new QGraphicsView(this);
@@ -77,8 +82,33 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Tworzenie przycisku Szukaj
     searchButton = new QPushButton("Szukaj", this);
-    searchButton->setStyleSheet("padding: 5px; font-size: 14px; background-color: #4CAF50; color: white; border: none;");
+    searchButton->setStyleSheet("padding: 5px; font-size: 14px; background-color: #4CAF50; color: white; border: none; min-width: 80px;");
     searchButton->setVisible(false);
+
+    // Tworzenie listy rozwijanej dla sortowania
+    sortComboBox = new QComboBox(this);
+    sortComboBox->addItems({"Bez sortowania", "Sortuj po ID"});
+    sortComboBox->setStyleSheet("padding: 5px; font-size: 14px;");
+    connect(sortComboBox, &QComboBox::currentTextChanged, this, [this](const QString &text) {
+        if (text == "Sortuj po ID") {
+            sortMode = "id";
+        } else if (text == "Sortuj po km") {
+            sortMode = "distance";
+        } else {
+            sortMode = "none";
+        }
+        onSearchTextChanged(searchEdit->text()); // Odśwież listę w trybie "Wybierz Stację"
+        if (currentMode == 1 && geocodingDone) {
+            // Odśwież listę w trybie "Podaj Lokalizację"
+            onSearchButtonClicked();
+        }
+    });
+
+    // Tworzenie przycisku Odczytaj Dane z Pliku
+    loadFileButton = new QPushButton("Odczytaj Dane z Pliku", this);
+    loadFileButton->setStyleSheet("padding: 5px; font-size: 16px; font-weight: bold; background-color: #6BB8D8; color: white; border: none; height: 30px; min-width: 200px;");
+    loadFileButton->setVisible(true); // Guzik widoczny od razu w trybie "Wybierz Stację"
+    connect(loadFileButton, &QPushButton::clicked, this, &MainWindow::onLoadFileButtonClicked);
 
     // Tworzenie karty informacyjnej jako nakładki
     infoCard = new StationInfoCard(this); // Bez kontenera, bezpośrednio w MainWindow
@@ -98,12 +128,18 @@ MainWindow::MainWindow(QWidget *parent)
 
     QHBoxLayout *searchLayout = new QHBoxLayout();
     searchLayout->addWidget(searchEdit);
-    searchLayout->addWidget(searchButton);
+    searchLayout->addWidget(sortComboBox);
+
+    QHBoxLayout *radiusLayout = new QHBoxLayout();
+    radiusLayout->addWidget(radiusEdit);
+    radiusLayout->addWidget(searchButton);
+    radiusLayout->addStretch();
 
     mainLayout->addLayout(headerLayout);
     mainLayout->addLayout(searchLayout);
-    mainLayout->addWidget(radiusEdit);
+    mainLayout->addLayout(radiusLayout);
     mainLayout->addWidget(stationListWidget);
+    mainLayout->addWidget(loadFileButton);
     mainLayout->addWidget(mapView);
     centralWidget->setLayout(mainLayout);
     setCentralWidget(centralWidget);
@@ -195,17 +231,21 @@ void MainWindow::onReplyFinished(QNetworkReply *reply) {
                 double lat = station["gegrLat"].toString().toDouble();
                 double lon = station["gegrLon"].toString().toDouble();
                 QString name = station["stationName"].toString();
+                int stationId = station["id"].toInt();
 
                 double x = ((lon - lonMin) / (lonMax - lonMin)) * mapWidth;
                 double mercatorLat = mercatorY(lat);
                 double y = ((mercatorMax - mercatorLat) / mercatorRange) * mapHeight;
 
-                QGraphicsEllipseItem *dot = new QGraphicsEllipseItem(x - 5, y - 5, 10, 10);
+                ClickableEllipseItem *dot = new ClickableEllipseItem(stationId, x - 5, y - 5, 10, 10);
                 dot->setBrush(QBrush(Qt::red));
                 dot->setPen(QPen(Qt::black, 1));
                 dot->setToolTip(name);
                 dot->setZValue(1);
                 mapScene->addItem(dot);
+
+                // Połącz sygnał kliknięcia z slotem
+                connect(dot, &ClickableEllipseItem::clicked, this, &MainWindow::onEllipseClicked);
             }
         }
 
@@ -222,6 +262,8 @@ void MainWindow::onSearchTextChanged(const QString &text) {
 
     if (currentMode == 0) {
         QString searchText = text.trimmed().toLower();
+        QList<QPair<int, QString>> stationItems; // Para: ID, tekst elementu
+
         for (const QJsonValue &value : allStations) {
             QJsonObject station = value.toObject();
             if (station.contains("city") && station["city"].isObject()) {
@@ -229,10 +271,24 @@ void MainWindow::onSearchTextChanged(const QString &text) {
                 QString cityName = city["name"].toString().toLower();
                 if (cityName.contains(searchText) || searchText.isEmpty()) {
                     QString stationName = station["stationName"].toString();
-                    QString stationId = QString::number(station["id"].toInt());
-                    stationListWidget->addItem(QString("ID: %1 - %2").arg(stationId, stationName));
+                    int stationId = station["id"].toInt();
+                    QString itemText = QString("ID: %1 - %2").arg(stationId).arg(stationName);
+                    stationItems.append(qMakePair(stationId, itemText));
                 }
             }
+        }
+
+        // Sortowanie, jeśli wybrano sortowanie po ID
+        if (sortMode == "id") {
+            std::sort(stationItems.begin(), stationItems.end(),
+                      [](const QPair<int, QString> &a, const QPair<int, QString> &b) {
+                          return a.first < b.first;
+                      });
+        }
+
+        // Dodaj posortowane elementy do listy
+        for (const auto &item : stationItems) {
+            stationListWidget->addItem(item.second);
         }
     } else if (currentMode == 1) {
         // W trybie "Podaj Lokalizację" lista jest aktualizowana po kliknięciu "Szukaj"
@@ -247,6 +303,16 @@ void MainWindow::onTitleButtonClicked() {
     infoCard->setVisible(false); // Ukryj kartę przy zmianie trybu
     stationListWidget->setEnabled(true); // Włącz interakcję z listą
 
+    sortComboBox->clear();
+    if (currentMode == 0) {
+        sortComboBox->addItems({"Bez sortowania", "Sortuj po ID"});
+    } else if (currentMode == 1) {
+        sortComboBox->addItems({"Bez sortowania", "Sortuj po ID", "Sortuj po km"});
+    } else {
+        sortComboBox->addItems({"Bez sortowania"});
+    }
+    sortMode = "none";
+
     switch (currentMode) {
     case 0:
         titleButton->updateOriginalText("Wybierz Stację");
@@ -256,7 +322,9 @@ void MainWindow::onTitleButtonClicked() {
         searchButton->setVisible(false);
         radiusEdit->setVisible(false);
         stationListWidget->setVisible(true);
+        loadFileButton->setVisible(true);
         mapView->setVisible(false);
+        sortComboBox->setVisible(true);
         onSearchTextChanged(searchEdit->text());
         break;
     case 1:
@@ -267,7 +335,9 @@ void MainWindow::onTitleButtonClicked() {
         searchButton->setVisible(true);
         radiusEdit->setVisible(true);
         stationListWidget->setVisible(true);
+        loadFileButton->setVisible(false);
         mapView->setVisible(false);
+        sortComboBox->setVisible(true);
         break;
     case 2:
         titleButton->updateOriginalText("Mapa Stacji");
@@ -276,7 +346,9 @@ void MainWindow::onTitleButtonClicked() {
         searchButton->setVisible(false);
         radiusEdit->setVisible(false);
         stationListWidget->setVisible(false);
+        loadFileButton->setVisible(false);
         mapView->setVisible(true);
+        sortComboBox->setVisible(false);
         break;
     }
 }
@@ -329,6 +401,8 @@ void MainWindow::onGeocodingReplyFinished(QNetworkReply *reply) {
                     radiusKm = 10.0;
                 }
 
+                QList<QPair<QPair<double, int>, QString>> stationItems; // Para: (odległość/ID, ID), tekst elementu
+
                 for (const QJsonValue &value : allStations) {
                     QJsonObject station = value.toObject();
                     if (station.contains("gegrLat") && station.contains("gegrLon")) {
@@ -338,16 +412,31 @@ void MainWindow::onGeocodingReplyFinished(QNetworkReply *reply) {
 
                         if (distance <= radiusKm) {
                             QString stationName = station["stationName"].toString();
-                            QString stationId = QString::number(station["id"].toInt());
-                            stationListWidget->addItem(QString("ID: %1 - %2 (%3 km)")
-                                                           .arg(stationId)
-                                                           .arg(stationName)
-                                                           .arg(distance, 0, 'f', 1));
+                            int stationId = station["id"].toInt();
+                            QString itemText = QString("ID: %1 - %2 (%3 km)")
+                                                   .arg(stationId)
+                                                   .arg(stationName)
+                                                   .arg(distance, 0, 'f', 1);
+                            double sortKey = (sortMode == "distance") ? distance : stationId;
+                            stationItems.append(qMakePair(qMakePair(sortKey, stationId), itemText));
                         }
                     }
                 }
 
-                if (stationListWidget->count() == 0) {
+                // Sortowanie
+                if (sortMode == "id" || sortMode == "distance") {
+                    std::sort(stationItems.begin(), stationItems.end(),
+                              [](const QPair<QPair<double, int>, QString> &a, const QPair<QPair<double, int>, QString> &b) {
+                                  return a.first.first < b.first.first;
+                              });
+                }
+
+                // Dodaj posortowane elementy do listy
+                for (const auto &item : stationItems) {
+                    stationListWidget->addItem(item.second);
+                }
+
+                if (stationItems.isEmpty()) {
                     QMessageBox::information(this, "Informacja", "Brak stacji w zadanym promieniu.");
                 }
             } else {
@@ -360,6 +449,30 @@ void MainWindow::onGeocodingReplyFinished(QNetworkReply *reply) {
         QMessageBox::critical(this, "Błąd", "Nie udało się pobrać danych lokalizacji: " + reply->errorString());
     }
     reply->deleteLater();
+}
+
+void MainWindow::onEllipseClicked(int stationId) {
+    if (currentMode == 2) { // Obsługa tylko w trybie "Mapa Stacji"
+        qDebug() << "Kliknięto kropkę stacji o ID:" << stationId;
+
+        // Znajdź stację w allStations, aby uzyskać dane
+        QString stationName, communeName, provinceName;
+        for (const QJsonValue &value : allStations) {
+            QJsonObject station = value.toObject();
+            if (station["id"].toInt() == stationId) {
+                stationName = station["stationName"].toString();
+                QJsonObject city = station["city"].toObject();
+                QJsonObject commune = city["commune"].toObject();
+                communeName = commune["communeName"].toString();
+                provinceName = commune["provinceName"].toString();
+                break;
+            }
+        }
+
+        qDebug() << "Wyodrębnione ID stacji:" << stationId << "Nazwa:" << stationName
+                 << "Gmina:" << communeName << "Województwo:" << provinceName;
+        onStationClicked(stationId, stationName, communeName, provinceName);
+    }
 }
 
 double MainWindow::calculateDistance(double lat1, double lon1, double lat2, double lon2) {
@@ -388,4 +501,82 @@ void MainWindow::onStationClicked(int stationId, const QString &stationName, con
     stationListWidget->setEnabled(false); // Wyłącz interakcję z listą stacji
     infoCard->setVisible(true); // Pokaż kartę jako nakładkę
     infoCard->showStationData(stationId, stationName, communeName, provinceName);
+}
+
+void MainWindow::onStationActivated(QListWidgetItem *item) {
+    if (currentMode == 0 || currentMode == 1) { // Obsługa w trybie "Wybierz Stację" i "Podaj Lokalizację"
+        QString text = item->text();
+        qDebug() << "Aktywowano stację:" << text;
+        int stationId = text.split(" - ").first().remove("ID: ").toInt();
+        QString stationName = text.split(" - ").last().split(" (").first(); // Wyodrębnij nazwę stacji
+
+        // Znajdź stację w allStations, aby uzyskać communeName i provinceName
+        QString communeName, provinceName;
+        for (const QJsonValue &value : allStations) {
+            QJsonObject station = value.toObject();
+            if (station["id"].toInt() == stationId) {
+                QJsonObject city = station["city"].toObject();
+                QJsonObject commune = city["commune"].toObject();
+                communeName = commune["communeName"].toString();
+                provinceName = commune["provinceName"].toString();
+                break;
+            }
+        }
+
+        qDebug() << "Wyodrębnione ID stacji:" << stationId << "Nazwa:" << stationName
+                 << "Gmina:" << communeName << "Województwo:" << provinceName;
+        onStationClicked(stationId, stationName, communeName, provinceName);
+    }
+}
+
+void MainWindow::onLoadFileButtonClicked() {
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Otwórz plik JSON"), QCoreApplication::applicationDirPath(), tr("Pliki JSON (*.json)"));
+    if (fileName.isEmpty()) {
+        qDebug() << "Odczyt anulowany przez użytkownika.";
+        return;
+    }
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("Błąd"), tr("Nie można otworzyć pliku: %1").arg(file.errorString()));
+        return;
+    }
+
+    QByteArray fileData = file.readAll();
+    file.close();
+
+    QJsonDocument doc = QJsonDocument::fromJson(fileData);
+    if (doc.isNull() || !doc.isObject()) {
+        QMessageBox::warning(this, tr("Błąd"), tr("Nieprawidłowy format pliku JSON."));
+        return;
+    }
+
+    QJsonObject rootObj = doc.object();
+    if (!rootObj.contains("stations") || !rootObj["stations"].isArray()) {
+        QMessageBox::warning(this, tr("Błąd"), tr("Plik nie zawiera danych stacji."));
+        return;
+    }
+
+    QJsonArray stationsArray = rootObj["stations"].toArray();
+    if (stationsArray.isEmpty()) {
+        QMessageBox::warning(this, tr("Błąd"), tr("Plik nie zawiera żadnych stacji."));
+        return;
+    }
+
+    // Pobierz pierwszą stację z pliku
+    QJsonObject stationObj = stationsArray[0].toObject();
+    QString stationName = stationObj["stationName"].toString();
+    QString location = stationObj["location"].toString();
+    QJsonArray sensorsArray = stationObj["sensors"].toArray();
+
+    if (stationName.isEmpty() || sensorsArray.isEmpty()) {
+        QMessageBox::warning(this, tr("Błąd"), tr("Plik zawiera nieprawidłowe lub niekompletne dane stacji."));
+        return;
+    }
+
+    // Wyłącz interakcję z listą stacji
+    stationListWidget->setEnabled(false);
+    // Pokaż kartę z danymi z pliku
+    infoCard->setVisible(true);
+    infoCard->showDataFromFile(stationName, location, sensorsArray);
 }
