@@ -6,7 +6,7 @@ Opis projektu
 GIOSrevamp to aplikacja napisana w Qt, która pozwala użytkownikom na:
 - Pobieranie danych z publicznych API GIOŚ (Główny Inspektorat Ochrony Środowiska).
 - Wyświetlanie danych sensorów w formie tabeli i wykresów historycznych.
-- Zapisywanie danych do plików JSON w pełnych godzinach (np. 16:00:00).
+- Zapisywanie danych do plików JSON.
 - Wczytywanie zapisanych danych z plików JSON.
 
 Wymagania
