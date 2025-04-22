@@ -3,13 +3,14 @@
 
 #include <QGraphicsEllipseItem>
 #include <QGraphicsSceneMouseEvent>
+#include <QObject>
 
-class ClickableEllipseItem : public QGraphicsEllipseItem {
+class ClickableEllipseItem : public QObject, public QGraphicsEllipseItem {
     Q_OBJECT
 
 public:
     ClickableEllipseItem(int stationId, qreal x, qreal y, qreal width, qreal height, QGraphicsItem *parent = nullptr)
-        : QGraphicsEllipseItem(x, y, width, height, parent), stationId(stationId) {
+        : QObject(nullptr), QGraphicsEllipseItem(x, y, width, height, parent), stationId(stationId) {
         setFlag(QGraphicsItem::ItemIsSelectable, true);
     }
 

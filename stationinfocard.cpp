@@ -824,23 +824,6 @@ void StationInfoCard::updateComboBoxPositions() {
              << ", chartView width=" << chartView->width();
 }
 
-#include "stationinfocard.h"
-#include <QPropertyAnimation>
-#include <QDebug>
-#include <QPalette>
-#include <QHBoxLayout>
-#include <QSpacerItem>
-#include <QFontMetrics>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QFile>
-#include <QDateTime>
-#include <QCoreApplication>
-#include <QDir>
-
-// Funkcja onSaveButtonClicked
 void StationInfoCard::onSaveButtonClicked() {
     qDebug() << "Przycisk Zapisz kliknięty";
 
@@ -868,9 +851,12 @@ void StationInfoCard::onSaveButtonClicked() {
             historicalData = sensorValues[paramCode];
         }
 
-        // Dodaj nowy punkt danych na początek
+        // Dodaj nowy punkt danych na początek z pełną godziną
+        QDateTime currentTime = QDateTime::currentDateTime();
+        // Zaokrąglij do pełnej godziny (minuty i sekundy na 0)
+        currentTime.setTime(QTime(currentTime.time().hour(), 0, 0));
         QJsonObject newDataPoint;
-        newDataPoint["date"] = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+        newDataPoint["date"] = currentTime.toString("yyyy-MM-dd HH:mm:ss");
         newDataPoint["value"] = latestValue.toDouble();
         historicalData.prepend(newDataPoint);
 
@@ -883,51 +869,29 @@ void StationInfoCard::onSaveButtonClicked() {
 
     stationObject["sensors"] = sensorsArray;
 
-    // Utwórz tablicę stations i dodaj stationObject
-    QJsonArray stationsArray;
-    stationsArray.append(stationObject);
-
-    // Utwórz główny obiekt JSON z kluczem "stations"
-    QJsonObject mainObject;
-    mainObject["stations"] = stationsArray;
-
-    // Przygotuj domyślną nazwę pliku na podstawie nazwy stacji
+    // Przygotuj nazwę pliku na podstawie nazwy stacji
     QString stationName = stationNameLabel->text();
     // Usuń nadmiarowe spacje
     stationName = stationName.simplified();
     // Usuń znaki specjalne, w tym przecinki i kropki
     stationName.remove(QRegularExpression("[<>:\"/\\\\|?*,.]"));
-    QString defaultFileName = stationName + ".json";
+    QString filePath = QCoreApplication::applicationDirPath() + "/data/" + stationName + ".json";
 
-    // Wybierz miejsce zapisu z domyślną nazwą pliku
-    QString filePath = QFileDialog::getSaveFileName(this, "Zapisz dane stacji", defaultFileName, "Pliki JSON (*.json)");
-    if (filePath.isEmpty()) {
-        qDebug() << "Zapis anulowany przez użytkownika";
-        return;
-    }
-
-    // Upewnij się, że plik ma rozszerzenie .json
-    if (!filePath.endsWith(".json", Qt::CaseInsensitive)) {
-        filePath += ".json";
+    // Utwórz katalog data, jeśli nie istnieje
+    QDir dir(QCoreApplication::applicationDirPath() + "/data");
+    if (!dir.exists()) {
+        dir.mkpath(".");
     }
 
     // Zapisz dane do pliku
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly)) {
-        QMessageBox::warning(this, "Błąd zapisu", "Nie można otworzyć pliku do zapisu.");
-        qDebug() << "Błąd: Nie można otworzyć pliku do zapisu:" << filePath;
-        return;
-    }
-
-    QJsonDocument doc(mainObject);
-    file.write(doc.toJson(QJsonDocument::Indented));
-    file.close();
-    qDebug() << "Dane zapisane do pliku:" << filePath;
+    saveDataToJson(filePath);
 
     // Zaktualizuj wykres po zapisaniu nowych danych
     if (sensorComboBox->count() > 0 && !sensorComboBox->currentText().isEmpty()) {
         updateChart(sensorComboBox->currentText());
     }
+
+    QMessageBox::information(this, tr("Sukces"), tr("Dane zostały zapisane do %1").arg(filePath));
 }
 
 void StationInfoCard::saveDataToJson(const QString &fileName) {
@@ -952,7 +916,32 @@ void StationInfoCard::saveDataToJson(const QString &fileName) {
         // Dane historyczne
         QJsonArray historicalData;
         if (sensorValues.contains(paramCode)) {
-            historicalData = sensorValues[paramCode];
+            QJsonArray existingData = sensorValues[paramCode];
+            QSet<QString> existingDates;
+            for (const QJsonValue &val : existingData) {
+                existingDates.insert(val.toObject()["date"].toString());
+            }
+
+            // Dodaj nowy punkt danych tylko, jeśli data jest unikalna
+            QDateTime currentTime = QDateTime::currentDateTime();
+            // Zaokrąglij do pełnej godziny (minuty i sekundy na 0)
+            currentTime.setTime(QTime(currentTime.time().hour(), 0, 0));
+            QString newDate = currentTime.toString("yyyy-MM-dd HH:mm:ss");
+            if (!existingDates.contains(newDate)) {
+                QJsonObject newDataPoint;
+                newDataPoint["date"] = newDate;
+                newDataPoint["value"] = dataTable->item(1, col)->text().toDouble();
+                existingData.prepend(newDataPoint); // Dodaj na początek
+            }
+            historicalData = existingData;
+        } else {
+            QDateTime currentTime = QDateTime::currentDateTime();
+            // Zaokrąglij do pełnej godziny (minuty i sekundy na 0)
+            currentTime.setTime(QTime(currentTime.time().hour(), 0, 0));
+            QJsonObject newDataPoint;
+            newDataPoint["date"] = currentTime.toString("yyyy-MM-dd HH:mm:ss");
+            newDataPoint["value"] = dataTable->item(1, col)->text().toDouble();
+            historicalData.prepend(newDataPoint); // Dodaj na początek
         }
         sensorObj["historicalData"] = historicalData;
 
@@ -1007,9 +996,9 @@ void StationInfoCard::saveDataToJson(const QString &fileName) {
             QJsonObject newSensor = newSensorValue.toObject();
             QString paramCode = newSensor["paramCode"].toString();
             QJsonObject updatedSensor = newSensor;
+            bool sensorExists = false;
 
             // Szukaj istniejącego sensora
-            bool sensorExists = false;
             for (const QJsonValue &existingSensorValue : existingSensors) {
                 QJsonObject existingSensor = existingSensorValue.toObject();
                 if (existingSensor["paramCode"].toString() == paramCode) {
@@ -1025,13 +1014,19 @@ void StationInfoCard::saveDataToJson(const QString &fileName) {
                         existingDates.insert(val.toObject()["date"].toString());
                     }
 
-                    // Dodaj tylko nowe unikalne wpisy historyczne
-                    QJsonArray mergedHistorical = existingHistorical;
+                    // Dodaj tylko nowe unikalne wpisy historyczne na początek
+                    QJsonArray mergedHistorical;
+                    // Najpierw dodaj nowe dane
                     for (const QJsonValue &newVal : newHistorical) {
                         QString date = newVal.toObject()["date"].toString();
                         if (!existingDates.contains(date)) {
                             mergedHistorical.append(newVal);
+                            existingDates.insert(date);
                         }
+                    }
+                    // Następnie dodaj istniejące dane
+                    for (const QJsonValue &existingVal : existingHistorical) {
+                        mergedHistorical.append(existingVal);
                     }
                     updatedSensor["historicalData"] = mergedHistorical;
                     break;
@@ -1069,5 +1064,4 @@ void StationInfoCard::saveDataToJson(const QString &fileName) {
     file.write(doc.toJson(QJsonDocument::Indented));
     file.close();
     qDebug() << "Dane zapisane do pliku:" << fileName;
-    QMessageBox::information(this, tr("Sukces"), tr("Dane zostały zapisane do %1").arg(fileName));
 }

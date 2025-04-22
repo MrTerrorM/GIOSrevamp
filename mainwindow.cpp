@@ -188,18 +188,12 @@ void MainWindow::onReplyFinished(QNetworkReply *reply) {
         // Wyczyść scenę mapy
         mapScene->clear();
 
-        // Ustaw granice geograficzne Polski
-        const double lonMin = 14.24;
-        const double lonMax = 22.59;
-        const double latMin = 49.09;
-        const double latMax = 54.61;
-
-        // Ustal rozmiar sceny
+        // Ustaw rozmiar sceny
         const double mapWidth = 600;
         const double mapHeight = 465;
         mapScene->setSceneRect(0, 0, mapWidth, mapHeight);
 
-        // Dodaj obraz mapy jako tło
+        // Wczytaj i przeskaluj mapę
         QPixmap mapPixmap(":/images/poland_map.png");
         if (mapPixmap.isNull()) {
             qDebug() << "Błąd: Nie udało się załadować obrazu mapy!";
@@ -210,8 +204,34 @@ void MainWindow::onReplyFinished(QNetworkReply *reply) {
 
         mapPixmap = mapPixmap.scaled(mapWidth, mapHeight, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         QGraphicsPixmapItem *mapItem = new QGraphicsPixmapItem(mapPixmap);
-        mapItem->setPos(0, 0);
+
+        // Oblicz przesunięcie, jeśli mapa nie wypełnia całej sceny
+        double mapPixmapWidth = mapPixmap.width();
+        double mapPixmapHeight = mapPixmap.height();
+        double offsetX = (mapWidth - mapPixmapWidth) / 2.0;
+        double offsetY = (mapHeight - mapPixmapHeight) / 2.0;
+        mapItem->setPos(offsetX, offsetY);
         mapScene->addItem(mapItem);
+
+        // Oblicz rzeczywiste granice stacji
+        double actualLonMin = std::numeric_limits<double>::max();
+        double actualLonMax = std::numeric_limits<double>::min();
+        double actualLatMin = std::numeric_limits<double>::max();
+        double actualLatMax = std::numeric_limits<double>::min();
+
+        for (const QJsonValue &value : allStations) {
+            QJsonObject station = value.toObject();
+            if (station.contains("gegrLat") && station.contains("gegrLon")) {
+                double lat = station["gegrLat"].toString().toDouble();
+                double lon = station["gegrLon"].toString().toDouble();
+                if (lon < actualLonMin) actualLonMin = lon;
+                if (lon > actualLonMax) actualLonMax = lon;
+                if (lat < actualLatMin) actualLatMin = lat;
+                if (lat > actualLatMax) actualLatMax = lat;
+            }
+        }
+        qDebug() << "Actual lon range:" << actualLonMin << "to" << actualLonMax;
+        qDebug() << "Actual lat range:" << actualLatMin << "to" << actualLatMax;
 
         // Oblicz wartości dla projekcji Mercator (oś Y)
         auto mercatorY = [](double lat) {
@@ -220,9 +240,13 @@ void MainWindow::onReplyFinished(QNetworkReply *reply) {
             return R * log(tan(M_PI / 4 + latRad / 2));
         };
 
-        double mercatorMin = mercatorY(latMin);
-        double mercatorMax = mercatorY(latMax);
+        double mercatorMin = mercatorY(actualLatMin);
+        double mercatorMax = mercatorY(actualLatMax);
         double mercatorRange = mercatorMax - mercatorMin;
+
+        // Skaluj kropki do rozmiaru mapy (nie sceny)
+        double scaleX = mapPixmapWidth / (actualLonMax - actualLonMin);
+        double scaleY = mapPixmapHeight / mercatorRange;
 
         // Narysuj kropki dla stacji
         for (const QJsonValue &value : allStations) {
@@ -233,9 +257,14 @@ void MainWindow::onReplyFinished(QNetworkReply *reply) {
                 QString name = station["stationName"].toString();
                 int stationId = station["id"].toInt();
 
-                double x = ((lon - lonMin) / (lonMax - lonMin)) * mapWidth;
+                // Oblicz pozycję kropki w skali mapy
+                double x = (lon - actualLonMin) * scaleX;
                 double mercatorLat = mercatorY(lat);
-                double y = ((mercatorMax - mercatorLat) / mercatorRange) * mapHeight;
+                double y = (mercatorMax - mercatorLat) * scaleY;
+
+                // Dodaj przesunięcie, aby kropki były wyrównane z mapą
+                x += offsetX;
+                y += offsetY;
 
                 ClickableEllipseItem *dot = new ClickableEllipseItem(stationId, x - 5, y - 5, 10, 10);
                 dot->setBrush(QBrush(Qt::red));
@@ -244,7 +273,6 @@ void MainWindow::onReplyFinished(QNetworkReply *reply) {
                 dot->setZValue(1);
                 mapScene->addItem(dot);
 
-                // Połącz sygnał kliknięcia z slotem
                 connect(dot, &ClickableEllipseItem::clicked, this, &MainWindow::onEllipseClicked);
             }
         }
