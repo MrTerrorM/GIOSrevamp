@@ -1,3 +1,8 @@
+/**
+ * @file mainwindow.cpp
+ * @brief Implementacja klasy MainWindow aplikacji GIOSrevamp.
+ */
+
 #include "mainwindow.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -16,6 +21,12 @@
 #include <QJsonDocument>
 #include <algorithm>
 
+/**
+ * @brief Konstruktor klasy MainWindow.
+ * @param parent Wskaźnik do nadrzędnego widgetu (domyślnie nullptr).
+ *
+ * Inicjalizuje interfejs użytkownika, ustawia połączenia sygnałów i slotów oraz wysyła zapytanie do API GIOŚ.
+ */
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), networkManager(new QNetworkAccessManager(this)), currentMode(0), geocodingDone(false), sortMode("none") {
 
@@ -90,6 +101,10 @@ MainWindow::MainWindow(QWidget *parent)
     sortComboBox->addItems({"Bez sortowania", "Sortuj po ID"});
     sortComboBox->setStyleSheet("padding: 5px; font-size: 14px;");
     connect(sortComboBox, &QComboBox::currentTextChanged, this, [this](const QString &text) {
+        /**
+         * @brief Lambda obsługująca zmianę trybu sortowania.
+         * @param text Wybrany tekst w liście rozwijanej.
+         */
         if (text == "Sortuj po ID") {
             sortMode = "id";
         } else if (text == "Sortuj po km") {
@@ -114,6 +129,9 @@ MainWindow::MainWindow(QWidget *parent)
     infoCard = new StationInfoCard(this); // Bez kontenera, bezpośrednio w MainWindow
     infoCard->setVisible(false); // Początkowo niewidoczna
     connect(infoCard, &StationInfoCard::cardClosed, this, [this]() {
+        /**
+         * @brief Lambda obsługująca zamknięcie karty informacyjnej.
+         */
         stationListWidget->setEnabled(true); // Włącz interakcję z listą po zamknięciu karty
         qDebug() << "Karta zamknięta, interakcja z listą włączona";
     });
@@ -154,6 +172,10 @@ MainWindow::MainWindow(QWidget *parent)
     request.setHeader(QNetworkRequest::UserAgentHeader, "MyStationFinderApp/1.0");
     QNetworkReply *reply = networkManager->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        /**
+         * @brief Lambda obsługująca zakończenie zapytania HTTP do API GIOŚ.
+         * @param reply Wskaźnik do obiektu odpowiedzi sieciowej.
+         */
         onReplyFinished(reply);
     });
 
@@ -163,8 +185,17 @@ MainWindow::MainWindow(QWidget *parent)
     connect(searchButton, &QPushButton::clicked, this, &MainWindow::onSearchButtonClicked);
 }
 
+/**
+ * @brief Destruktor klasy MainWindow.
+ */
 MainWindow::~MainWindow() {}
 
+/**
+ * @brief Obsługuje zakończenie odpowiedzi HTTP z API.
+ * @param reply Wskaźnik do obiektu odpowiedzi sieciowej.
+ *
+ * Parsuje dane JSON z listy stacji, rysuje kropki na mapie i aktualizuje listę stacji.
+ */
 void MainWindow::onReplyFinished(QNetworkReply *reply) {
     if (reply->error() == QNetworkReply::NoError) {
         QByteArray rawData = reply->readAll();
@@ -235,6 +266,11 @@ void MainWindow::onReplyFinished(QNetworkReply *reply) {
 
         // Oblicz wartości dla projekcji Mercator (oś Y)
         auto mercatorY = [](double lat) {
+            /**
+             * @brief Lambda obliczająca współrzędną Y w projekcji Mercator.
+             * @param lat Szerokość geograficzna w stopniach.
+             * @return Współrzędna Y w projekcji Mercator.
+             */
             const double R = 6371.0;
             double latRad = qDegreesToRadians(lat);
             return R * log(tan(M_PI / 4 + latRad / 2));
@@ -285,6 +321,12 @@ void MainWindow::onReplyFinished(QNetworkReply *reply) {
     reply->deleteLater();
 }
 
+/**
+ * @brief Obsługuje zmianę tekstu w polu wyszukiwania.
+ * @param text Nowy tekst w polu wyszukiwania.
+ *
+ * Aktualizuje listę stacji w trybie "Wybierz Stację" na podstawie wprowadzonego tekstu wyszukiwania.
+ */
 void MainWindow::onSearchTextChanged(const QString &text) {
     stationListWidget->clear();
 
@@ -310,6 +352,12 @@ void MainWindow::onSearchTextChanged(const QString &text) {
         if (sortMode == "id") {
             std::sort(stationItems.begin(), stationItems.end(),
                       [](const QPair<int, QString> &a, const QPair<int, QString> &b) {
+                          /**
+                           * @brief Lambda porównująca elementy do sortowania po ID.
+                           * @param a Pierwszy element (para ID i tekst).
+                           * @param b Drugi element (para ID i tekst).
+                           * @return Wartość logiczna określająca kolejność.
+                           */
                           return a.first < b.first;
                       });
         }
@@ -325,6 +373,11 @@ void MainWindow::onSearchTextChanged(const QString &text) {
     }
 }
 
+/**
+ * @brief Obsługuje kliknięcie przycisku tytułu.
+ *
+ * Przełącza tryby aplikacji (Wybierz Stację, Podaj Lokalizację, Mapa Stacji) i aktualizuje interfejs.
+ */
 void MainWindow::onTitleButtonClicked() {
     currentMode = (currentMode + 1) % 3;
     stationListWidget->clear();
@@ -381,6 +434,11 @@ void MainWindow::onTitleButtonClicked() {
     }
 }
 
+/**
+ * @brief Obsługuje kliknięcie przycisku wyszukiwania.
+ *
+ * Inicjuje geokodowanie lokalizacji wprowadzonej w polu wyszukiwania.
+ */
 void MainWindow::onSearchButtonClicked() {
     QString location = searchEdit->text().trimmed();
     if (location.length() >= 5) {
@@ -391,6 +449,12 @@ void MainWindow::onSearchButtonClicked() {
     }
 }
 
+/**
+ * @brief Wykonuje geokodowanie podanej lokalizacji.
+ * @param location Nazwa lokalizacji do geokodowania.
+ *
+ * Wysyła zapytanie do API Nominatim w celu uzyskania współrzędnych geograficznych.
+ */
 void MainWindow::geocodeLocation(const QString &location) {
     QString encodedLocation = QUrl::toPercentEncoding(location);
     QString urlString = QString("https://nominatim.openstreetmap.org/search?q=%1&format=json&limit=1").arg(encodedLocation);
@@ -402,10 +466,20 @@ void MainWindow::geocodeLocation(const QString &location) {
 
     QNetworkReply *reply = networkManager->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        /**
+         * @brief Lambda obsługująca zakończenie zapytania geokodowania.
+         * @param reply Wskaźnik do obiektu odpowiedzi sieciowej.
+         */
         onGeocodingReplyFinished(reply);
     });
 }
 
+/**
+ * @brief Obsługuje odpowiedź geokodowania z API Nominatim.
+ * @param reply W regulations pointer to the network reply object.
+ *
+ * Parsuje odpowiedź, aktualizuje współrzędne użytkownika i odświeża listę stacji w trybie "Podaj Lokalizację".
+ */
 void MainWindow::onGeocodingReplyFinished(QNetworkReply *reply) {
     if (reply->error() == QNetworkReply::NoError) {
         QByteArray rawData = reply->readAll();
@@ -455,6 +529,12 @@ void MainWindow::onGeocodingReplyFinished(QNetworkReply *reply) {
                 if (sortMode == "id" || sortMode == "distance") {
                     std::sort(stationItems.begin(), stationItems.end(),
                               [](const QPair<QPair<double, int>, QString> &a, const QPair<QPair<double, int>, QString> &b) {
+                                  /**
+                                   * @brief Lambda porównująca elementy do sortowania po kluczu (ID lub odległość).
+                                   * @param a Pierwszy element (para klucz-ID i tekst).
+                                   * @param b Drugi element (para klucz-ID i tekst).
+                                   * @return Wartość logiczna określająca kolejność.
+                                   */
                                   return a.first.first < b.first.first;
                               });
                 }
@@ -479,6 +559,12 @@ void MainWindow::onGeocodingReplyFinished(QNetworkReply *reply) {
     reply->deleteLater();
 }
 
+/**
+ * @brief Obsługuje kliknięcie elipsy na mapie.
+ * @param stationId Identyfikator stacji powiązanej z elipsą.
+ *
+ * Wyświetla dane klikniętej stacji w trybie "Mapa Stacji".
+ */
 void MainWindow::onEllipseClicked(int stationId) {
     if (currentMode == 2) { // Obsługa tylko w trybie "Mapa Stacji"
         qDebug() << "Kliknięto kropkę stacji o ID:" << stationId;
@@ -503,6 +589,16 @@ void MainWindow::onEllipseClicked(int stationId) {
     }
 }
 
+/**
+ * @brief Oblicza odległość między dwoma punktami geograficznymi.
+ * @param lat1 Szerokość geograficzna pierwszego punktu.
+ * @param lon1 Długość geograficzna pierwszego punktu.
+ * @param lat2 Szerokość geograficzna drugiego punktu.
+ * @param lon2 Długość geograficzna drugiego punktu.
+ * @return Odległość w kilometrach.
+ *
+ * Używa wzoru haversine do obliczenia odległości na powierzchni Ziemi.
+ */
 double MainWindow::calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     const double R = 6371.0;
 
@@ -523,6 +619,15 @@ double MainWindow::calculateDistance(double lat1, double lon1, double lat2, doub
     return distance;
 }
 
+/**
+ * @brief Obsługuje kliknięcie stacji na liście lub mapie.
+ * @param stationId Identyfikator stacji.
+ * @param stationName Nazwa stacji.
+ * @param communeName Nazwa gminy.
+ * @param provinceName Nazwa województwa.
+ *
+ * Wyświetla kartę informacyjną z danymi wybranej stacji.
+ */
 void MainWindow::onStationClicked(int stationId, const QString &stationName, const QString &communeName, const QString &provinceName) {
     qDebug() << "Wywołano onStationClicked dla ID:" << stationId << "Nazwa:" << stationName
              << "Gmina:" << communeName << "Województwo:" << provinceName;
@@ -531,6 +636,12 @@ void MainWindow::onStationClicked(int stationId, const QString &stationName, con
     infoCard->showStationData(stationId, stationName, communeName, provinceName);
 }
 
+/**
+ * @brief Obsługuje aktywację stacji na liście.
+ * @param item Wskaźnik do elementu listy.
+ *
+ * Wyświetla dane aktywowanej stacji w trybie "Wybierz Stację" lub "Podaj Lokalizację".
+ */
 void MainWindow::onStationActivated(QListWidgetItem *item) {
     if (currentMode == 0 || currentMode == 1) { // Obsługa w trybie "Wybierz Stację" i "Podaj Lokalizację"
         QString text = item->text();
@@ -557,6 +668,11 @@ void MainWindow::onStationActivated(QListWidgetItem *item) {
     }
 }
 
+/**
+ * @brief Obsługuje kliknięcie przycisku wczytywania pliku JSON.
+ *
+ * Otwiera okno dialogowe do wyboru pliku JSON i wyświetla dane stacji z pliku.
+ */
 void MainWindow::onLoadFileButtonClicked() {
     QString fileName = QFileDialog::getOpenFileName(this, tr("Otwórz plik JSON"), QCoreApplication::applicationDirPath(), tr("Pliki JSON (*.json)"));
     if (fileName.isEmpty()) {

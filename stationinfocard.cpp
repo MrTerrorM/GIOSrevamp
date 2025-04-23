@@ -1,3 +1,8 @@
+/**
+ * @file stationinfocard.cpp
+ * @brief Implementacja klasy StationInfoCard aplikacji GIOSrevamp.
+ */
+
 #include "stationinfocard.h"
 #include <QPropertyAnimation>
 #include <QDebug>
@@ -14,6 +19,12 @@
 #include <QCoreApplication>
 #include <QDir>
 
+/**
+ * @brief Konstruktor klasy StationInfoCard.
+ * @param parent Wskaźnik do nadrzędnego widgetu (domyślnie nullptr).
+ *
+ * Inicjalizuje interfejs karty informacyjnej, ustawia style i połączenia sygnałów.
+ */
 StationInfoCard::StationInfoCard(QWidget *parent)
     : QFrame(parent), networkManager(new QNetworkAccessManager(this)), pendingRequests(0), currentTimeRange("Dzień") {
     // Ustawienie karty jako pełnoekranowej względem rodzica
@@ -179,6 +190,11 @@ StationInfoCard::StationInfoCard(QWidget *parent)
     qDebug() << "StationInfoCard utworzona";
 }
 
+/**
+ * @brief Konfiguruje wykres QtCharts.
+ *
+ * Ustawia styl wykresu, tworzy osie i konfiguruje ich formatowanie.
+ */
 void StationInfoCard::setupChart() {
     chart->setTitleBrush(Qt::white);
     chart->setBackgroundBrush(Qt::black);
@@ -210,6 +226,15 @@ void StationInfoCard::setupChart() {
     chart->addAxis(axisY, Qt::AlignLeft);
 }
 
+/**
+ * @brief Wyświetla dane dla wybranej stacji.
+ * @param stationId Identyfikator stacji.
+ * @param stationName Nazwa stacji.
+ * @param communeName Nazwa gminy.
+ * @param provinceName Nazwa województwa.
+ *
+ * Inicjuje pobieranie danych sensorów z API GIOŚ i pokazuje kartę z animacją.
+ */
 void StationInfoCard::showStationData(int stationId, const QString &stationName, const QString &communeName, const QString &provinceName) {
     qDebug() << "Pokazywanie danych dla stacji ID:" << stationId << "Nazwa:" << stationName << "Gmina:" << communeName << "Województwo:" << provinceName;
 
@@ -244,6 +269,10 @@ void StationInfoCard::showStationData(int stationId, const QString &stationName,
     request.setHeader(QNetworkRequest::UserAgentHeader, "MyStationFinderApp/1.0");
     QNetworkReply *reply = networkManager->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        /**
+         * @brief Lambda obsługująca zakończenie zapytania o sensory.
+         * @param reply Wskaźnik do obiektu odpowiedzi sieciowej.
+         */
         onSensorsReplyFinished(reply);
     });
 
@@ -257,6 +286,14 @@ void StationInfoCard::showStationData(int stationId, const QString &stationName,
     animateIn();
 }
 
+/**
+ * @brief Wyświetla dane wczytane z pliku JSON.
+ * @param stationName Nazwa stacji.
+ * @param location Lokalizacja stacji.
+ * @param sensors Tablica danych sensorów.
+ *
+ * Wypełnia kartę danymi z pliku i aktualizuje wykres.
+ */
 void StationInfoCard::showDataFromFile(const QString &stationName, const QString &location, const QJsonArray &sensors) {
     qDebug() << "Pokazywanie danych z pliku dla stacji:" << stationName << "Lokalizacja:" << location;
 
@@ -354,6 +391,12 @@ void StationInfoCard::showDataFromFile(const QString &stationName, const QString
     animateIn();
 }
 
+/**
+ * @brief Obsługuje odpowiedź API z danymi sensorów.
+ * @param reply Wskaźnik do obiektu odpowiedzi sieciowej.
+ *
+ * Parsuje listę sensorów i inicjuje pobieranie danych historycznych.
+ */
 void StationInfoCard::onSensorsReplyFinished(QNetworkReply *reply) {
     if (reply->error() == QNetworkReply::NoError) {
         QByteArray rawData = reply->readAll();
@@ -415,6 +458,11 @@ void StationInfoCard::onSensorsReplyFinished(QNetworkReply *reply) {
                     dataRequest.setHeader(QNetworkRequest::UserAgentHeader, "MyStationFinderApp/1.0");
                     QNetworkReply *dataReply = networkManager->get(dataRequest);
                     connect(dataReply, &QNetworkReply::finished, this, [this, column, paramCode]() {
+                        /**
+                         * @brief Lambda obsługująca zakończenie zapytania o dane sensora.
+                         * @param column Numer kolumny w tabeli.
+                         * @param paramCode Kod parametru sensora.
+                         */
                         QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
                         if (reply) {
                             onDataReplyFinished(reply, column, paramCode);
@@ -441,6 +489,14 @@ void StationInfoCard::onSensorsReplyFinished(QNetworkReply *reply) {
     reply->deleteLater();
 }
 
+/**
+ * @brief Obsługuje odpowiedź API z danymi historycznymi sensora.
+ * @param reply Wskaźnik do obiektu odpowiedzi sieciowej.
+ * @param column Numer kolumny w tabeli danych.
+ * @param paramCode Kod parametru sensora.
+ *
+ * Aktualizuje tabelę i wykres danymi sensora.
+ */
 void StationInfoCard::onDataReplyFinished(QNetworkReply *reply, int column, const QString paramCode) {
     if (reply->error() == QNetworkReply::NoError) {
         QByteArray rawData = reply->readAll();
@@ -506,11 +562,23 @@ void StationInfoCard::onDataReplyFinished(QNetworkReply *reply, int column, cons
     }
 }
 
+/**
+ * @brief Obsługuje zmianę wybranego sensora.
+ * @param paramCode Kod wybranego parametru.
+ *
+ * Aktualizuje wykres dla nowo wybranego sensora.
+ */
 void StationInfoCard::onSensorSelectionChanged(const QString paramCode) {
     qDebug() << "Wybrano sensor:" << paramCode;
     updateChart(paramCode);
 }
 
+/**
+ * @brief Obsługuje zmianę zakresu czasu na wykresie.
+ * @param timeRange Nowy zakres czasu (np. "Dzień", "Tydzień").
+ *
+ * Aktualizuje wykres dla aktualnego sensora z nowym zakresem czasu.
+ */
 void StationInfoCard::onTimeRangeChanged(const QString timeRange) {
     qDebug() << "Wybrano zakres czasu:" << timeRange;
     currentTimeRange = timeRange;
@@ -519,6 +587,12 @@ void StationInfoCard::onTimeRangeChanged(const QString timeRange) {
     }
 }
 
+/**
+ * @brief Aktualizuje wykres dla wybranego sensora.
+ * @param paramCode Kod parametru sensora.
+ *
+ * Rysuje wykres danych historycznych sensora z uwzględnieniem zakresu czasu.
+ */
 void StationInfoCard::updateChart(const QString paramCode) {
     qDebug() << "Aktualizowanie wykresu dla paramCode:" << paramCode;
 
@@ -765,6 +839,11 @@ void StationInfoCard::updateChart(const QString paramCode) {
     }
 }
 
+/**
+ * @brief Wykonuje animację pojawienia się karty.
+ *
+ * Przesuwa kartę z lewej strony do pozycji widocznej.
+ */
 void StationInfoCard::animateIn() {
     qDebug() << "Rozpoczynanie animacji wjazdu";
     QPropertyAnimation *animation = new QPropertyAnimation(this, "pos");
@@ -773,11 +852,19 @@ void StationInfoCard::animateIn() {
     animation->setEndValue(QPoint(0, 0));
     animation->setEasingCurve(QEasingCurve::OutCubic);
     connect(animation, &QPropertyAnimation::finished, this, []() {
+        /**
+         * @brief Lambda obsługująca zakończenie animacji wjazdu.
+         */
         qDebug() << "Animacja wjazdu zakończona";
     });
     animation->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
+/**
+ * @brief Wykonuje animację zniknięcia karty.
+ *
+ * Przesuwa kartę z powrotem na lewo i emituje sygnał zamknięcia.
+ */
 void StationInfoCard::animateOut() {
     qDebug() << "Rozpoczynanie animacji wyjazdu";
     QPropertyAnimation *animation = new QPropertyAnimation(this, "pos");
@@ -786,6 +873,9 @@ void StationInfoCard::animateOut() {
     animation->setEndValue(QPoint(-width(), 0));
     animation->setEasingCurve(QEasingCurve::InCubic);
     connect(animation, &QPropertyAnimation::finished, this, [this]() {
+        /**
+         * @brief Lambda obsługująca zakończenie animacji wyjazdu.
+         */
         setVisible(false);
         emit cardClosed();
         qDebug() << "Animacja wyjazdu zakończona, karta ukryta";
@@ -793,11 +883,21 @@ void StationInfoCard::animateOut() {
     animation->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
+/**
+ * @brief Obsługuje kliknięcie przycisku zamknięcia karty.
+ *
+ * Uruchamia animację zniknięcia karty.
+ */
 void StationInfoCard::onCloseButtonClicked() {
     qDebug() << "Przycisk Zamknij kliknięty";
     animateOut();
 }
 
+/**
+ * @brief Dopasowuje szerokość tabeli danych.
+ *
+ * Ustawia minimalną i maksymalną szerokość tabeli na podstawie sumy szerokości kolumn.
+ */
 void StationInfoCard::adjustTableWidth() {
     int totalWidth = 0;
     for (int col = 0; col < dataTable->columnCount(); ++col) {
@@ -808,6 +908,11 @@ void StationInfoCard::adjustTableWidth() {
     dataTable->setMinimumWidth(totalWidth);
 }
 
+/**
+ * @brief Aktualizuje pozycje list rozwijanych na wykresie.
+ *
+ * Ustawia pozycję timeRangeComboBox po prawej stronie chartView, z odstępem od sensorComboBox.
+ */
 void StationInfoCard::updateComboBoxPositions() {
     // Ustaw pozycję timeRangeComboBox po prawej stronie chartView, z odstępem od sensorComboBox
     int margin = 10;
@@ -821,6 +926,11 @@ void StationInfoCard::updateComboBoxPositions() {
              << ", chartView width=" << chartView->width();
 }
 
+/**
+ * @brief Obsługuje kliknięcie przycisku zapisu danych.
+ *
+ * Zapisuje dane stacji do pliku JSON i aktualizuje wykres.
+ */
 void StationInfoCard::onSaveButtonClicked() {
     qDebug() << "Przycisk Zapisz kliknięty";
 
@@ -891,6 +1001,12 @@ void StationInfoCard::onSaveButtonClicked() {
     QMessageBox::information(this, tr("Sukces"), tr("Dane zostały zapisane do %1").arg(filePath));
 }
 
+/**
+ * @brief Zapisuje dane stacji do pliku JSON.
+ * @param fileName Ścieżka do pliku JSON.
+ *
+ * Scalanie istniejących danych z nowymi, unikając duplikacji.
+ */
 void StationInfoCard::saveDataToJson(const QString &fileName) {
     // Przygotowanie danych stacji
     QString stationName = stationNameLabel->text();

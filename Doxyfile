@@ -1,0 +1,91 @@
+# Doxyfile dla projektu GIOSrevamp
+# Wygenerowany dla dokumentacji kodu C++ z komentarzami Doxygen
+
+# Nazwa projektu
+PROJECT_NAME           = "GIOSrevamp"
+
+# Numer wersji projektu
+PROJECT_NUMBER         = "1.0"
+
+# Krótki opis projektu
+PROJECT_BRIEF          = "Aplikacja do wizualizacji danych ze stacji monitoringu jakości powietrza"
+
+# Ścieżka do folderu wyjściowego dokumentacji
+OUTPUT_DIRECTORY       = ./docs
+
+# Język dokumentacji (polski)
+OUTPUT_LANGUAGE        = Polish
+
+# Włączenie generowania dokumentacji dla wszystkich elementów, nawet bez komentarzy
+EXTRACT_ALL            = YES
+
+# Włączenie dokumentacji dla prywatnych członków klasy
+EXTRACT_PRIVATE        = YES
+
+# Włączenie dokumentacji dla statycznych członków
+EXTRACT_STATIC         = YES
+
+# Ścieżki do kodu źródłowego
+INPUT                  = ./
+
+# Wzorce plików do przetworzenia
+FILE_PATTERNS          = *.cpp *.h
+
+# Rekurencyjne przeszukiwanie katalogów
+RECURSIVE              = YES
+
+# Włączenie generowania dokumentacji HTML
+GENERATE_HTML          = YES
+
+# Wyłączenie generowania dokumentacji LaTeX
+GENERATE_LATEX         = NO
+
+# Włączenie generowania drzewa katalogów
+GENERATE_TREEVIEW      = YES
+
+# Włączenie generowania diagramów klas (jeśli Graphviz jest zainstalowany)
+HAVE_DOT               = YES
+CLASS_DIAGRAMS         = YES
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = YES
+
+# Ścieżka do narzędzia dot (Graphviz)
+DOT_PATH               = 
+
+# Włączenie pełnych ścieżek w dokumentacji
+FULL_PATH_NAMES        = YES
+
+# Włączenie optymalizacji dla C++
+OPTIMIZE_OUTPUT_FOR_C  = NO
+
+# Włączenie komentarzy w stylu Doxygen
+JAVADOC_AUTOBRIEF      = YES
+
+# Włączenie generowania strony głównej na podstawie pliku README.md, jeśli istnieje
+USE_MDFILE_AS_MAINPAGE = README.md
+
+# Ignorowanie określonych katalogów (np. build)
+EXCLUDE                = build/ docs/
+
+# Kodowanie plików źródłowych
+INPUT_ENCODING         = UTF-8
+
+# Stylizacja HTML
+HTML_OUTPUT            = html
+HTML_DYNAMIC_SECTIONS  = YES
+HTML_TIMESTAMP         = YES
+
+# Włączenie wyszukiwarki w HTML
+SEARCHENGINE           = YES
+
+# Włączenie przykładów kodu w dokumentacji
+EXAMPLE_PATH           = ./
+EXAMPLE_RECURSIVE      = YES
+
+# Włączenie numeracji linii w przykładach kodu
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = YES
+
+# Ustawienia dla diagramów zależności
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
